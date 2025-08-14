@@ -1,9 +1,12 @@
 import React, { useMemo, useState, useEffect } from "react";
 
-// Konceptual Time & Leave — Frontend Prototype
-// Brand implementation from Brandbook 2025
-// Colors: Jungle Green #0D3036, Vivid Orange #FF5C01, Beige White #F0F6E0, Black #000000, White #FFFFFF
-// Headings: Sherika (Bold/Medium). Body: Helvetica Neue Regular (with fallbacks).
+// Konceptual Time & Leave — Frontend Prototype (Brand 2025)
+// New features in this revision:
+// 1) Corrected tip text + proper late logic
+// 2) Timezone-aware clocking per employee (AU vs PK etc.)
+// 3) Per-employee shift window (start/end) + grace minutes
+// 4) Roles/permissions: Manager, Engineer, Drafter (tabs adapt)
+// 5) Mobile bottom nav for quick access
 
 // --- Brand Palette (exact matches) ---
 const BRAND = {
@@ -17,36 +20,66 @@ const BRAND = {
 
 const shadow = {
   card: "0 10px 25px rgba(0,0,0,.06)",
-  soft: "0 2px 12px rgba(0,0,0,.06)",
 };
 
 // Inject minimal global styles for typography
 function BrandTypography() {
   return (
     <style>{`
-      :root{
-        --brand-jungle: ${BRAND.jungle};
-        --brand-orange: ${BRAND.orange};
-        --brand-beige: ${BRAND.beige};
-      }
+      :root{ --brand-jungle:${BRAND.jungle}; --brand-orange:${BRAND.orange}; --brand-beige:${BRAND.beige}; }
       .font-display{ font-family: Sherika, "Helvetica Neue", Arial, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight: 700; letter-spacing: -0.01em; }
       .font-display-medium{ font-family: Sherika, "Helvetica Neue", Arial, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight: 600; letter-spacing: -0.01em; }
       .font-body{ font-family: "Helvetica Neue", Arial, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
       .bevel-card{ border-radius: 1rem; box-shadow: ${shadow.card}; background: ${BRAND.white}; }
       .pill{ border-radius: 0.75rem; }
       .btn{ border-radius: 0.75rem; font-weight: 700; }
+      .safe-touch{ min-height: 44px; min-width: 44px; }
+      @media (max-width: 768px){
+        body{ padding-bottom: 72px; } /* space for bottom nav */
+      }
     `}</style>
   );
 }
 
-function Header({ role, onRoleChange }) {
+// --- Helpers: time & shifts ---
+const TZ = {
+  AU: "Australia/Melbourne",
+  PK: "Asia/Karachi",
+};
+
+function hhmmToMins(hhmm){ const [h,m] = hhmm.split(":").map(Number); return h*60 + m; }
+function minsToHHMM(mins){ const h = Math.floor(mins/60).toString().padStart(2,'0'); const m = (mins%60).toString().padStart(2,'0'); return `${h}:${m}`; }
+function nowMinsInTZ(timeZone){
+  const s = new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone}).format(new Date());
+  const [hh,mm] = s.split(':').map(Number); return hh*60+mm;
+}
+function nowClockString(tz){
+  return new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone: tz}).format(new Date());
+}
+
+// --- Sample employees with roles, timezones & shifts ---
+const EMPLOYEES = [
+  { id:"U001", name:"Nick",     role:"Manager",  country:"AU", timeZone: TZ.AU, shiftStart:"08:00", shiftEnd:"16:00", graceMin:5, rate: 90 },
+  { id:"U002", name:"Rizwan",   role:"Engineer", country:"PK", timeZone: TZ.PK, shiftStart:"08:00", shiftEnd:"16:00", graceMin:5, rate: 55 },
+  { id:"U003", name:"Hira",     role:"Drafter",  country:"PK", timeZone: TZ.PK, shiftStart:"10:00", shiftEnd:"18:00", graceMin:5, rate: 45 },
+  { id:"U004", name:"Miguel",   role:"Engineer", country:"AU", timeZone: TZ.AU, shiftStart:"09:30", shiftEnd:"17:30", graceMin:10, rate: 65 },
+];
+
+// Projects sample
+const PROJECTS = [
+  { code: "01-MEL-01-0007", name: "Factory Retaining Walls", client: "RWS", hours: 126 },
+  { code: "01-SYD-01-0032", name: "Sunset Sleepers Custom", client: "SSP", hours: 76 },
+  { code: "01-MEL-01-0019", name: "Keystone POS Connection R&D", client: "KST", hours: 48 },
+];
+
+function Header({ user, onUserChange }){
   return (
     <header style={{
       background: `linear-gradient(120deg, ${BRAND.jungle}, ${BRAND.jungle600})`,
       color: BRAND.white,
       boxShadow: shadow.card,
     }} className="sticky top-0 z-30 font-body">
-      <div className="max-w-7xl mx-auto px-5 py-4 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-5 py-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div style={{background: BRAND.orange}} className="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xl">K</div>
           <div>
@@ -54,39 +87,28 @@ function Header({ role, onRoleChange }) {
             <div className="opacity-85 text-sm">Engineering Excellence From Ground Up</div>
           </div>
         </div>
-        <RoleSwitch role={role} onChange={onRoleChange} />
+        <div className="flex items-center gap-3">
+          <div className="text-right hidden md:block">
+            <div className="text-xs opacity-80">Role</div>
+            <div className="font-display-medium">{user.role}</div>
+          </div>
+          <select className="pill p-2 text-sm text-black" value={user.id} onChange={e=>onUserChange(e.target.value)}>
+            {EMPLOYEES.map(u => (
+              <option key={u.id} value={u.id}>{u.name} • {u.role}</option>
+            ))}
+          </select>
+        </div>
       </div>
     </header>
   );
 }
 
-function RoleSwitch({ role, onChange }) {
-  const roles = ["Employee", "Manager", "Admin"];
-  return (
-    <div className="flex items-center pill p-1" style={{background: "rgba(255,255,255,0.12)"}}>
-      {roles.map(r => (
-        <button key={r}
-          onClick={() => onChange(r)}
-          style={{
-            background: role===r ? BRAND.beige : "transparent",
-            color: role===r ? BRAND.jungle : BRAND.white,
-          }}
-          className={`px-3 py-1.5 pill text-sm font-body font-semibold transition-all`}>{r}</button>
-      ))}
-    </div>
-  );
-}
-
-function TabBar({ tabs, active, onSelect }) {
+function TabBar({ tabs, active, onSelect }){
   return (
     <nav className="max-w-7xl mx-auto px-5 pt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 font-body">
       {tabs.map(t => (
-        <button key={t.key}
-          onClick={() => onSelect(t.key)}
-          style={{
-            borderColor: active===t.key ? BRAND.orange : "transparent",
-            background: active===t.key ? BRAND.beige : BRAND.white,
-          }}
+        <button key={t.key} onClick={()=>onSelect(t.key)}
+          style={{ borderColor: active===t.key? BRAND.orange : "transparent", background: active===t.key? BRAND.beige : BRAND.white }}
           className="pill border-2 p-3 text-left shadow-sm hover:shadow-md transition-all">
           <div className="text-xs opacity-70">{t.section}</div>
           <div className="font-display-medium">{t.label}</div>
@@ -96,14 +118,29 @@ function TabBar({ tabs, active, onSelect }) {
   );
 }
 
-function StatCard({ label, value, hint, progress, accent="jungle" }) {
+function MobileNav({ tabs, active, onSelect }){
+  // Mobile bottom nav for quick access
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t font-body" style={{borderColor:'#E5E7EB'}}>
+      <div className="grid grid-cols-4 text-sm">
+        {tabs.slice(0,4).map(t => (
+          <button key={t.key} onClick={()=>onSelect(t.key)} className="py-3 safe-touch" style={{color: active===t.key? BRAND.orange : BRAND.jungle}}>
+            <div className="font-display-medium leading-none">{t.label.split(' ')[0]}</div>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function StatCard({ label, value, hint, progress, accent="jungle" }){
   const bar = accent==="orange" ? BRAND.orange : BRAND.jungle;
   return (
     <div className="bevel-card p-5 font-body">
       <div className="text-sm opacity-70">{label}</div>
       <div className="text-2xl md:text-3xl font-display">{value}</div>
       {hint && <div className="text-xs opacity-70 mt-1">{hint}</div>}
-      {typeof progress === "number" && (
+      {typeof progress === 'number' && (
         <div className="mt-3">
           <div className="h-2 w-full pill" style={{background: "#E5E7EB"}} />
           <div className="-mt-2 h-2 pill" style={{width: `${Math.min(100, Math.max(0, progress))}%`, background: bar}} />
@@ -113,7 +150,7 @@ function StatCard({ label, value, hint, progress, accent="jungle" }) {
   );
 }
 
-function Section({ title, children, actions }) {
+function Section({ title, children, actions }){
   return (
     <section className="max-w-7xl mx-auto px-5 py-6 font-body">
       <div className="flex items-center justify-between mb-3">
@@ -125,71 +162,53 @@ function Section({ title, children, actions }) {
   );
 }
 
-// --- Sample data (placeholder) ---
-const sampleProjects = [
-  { code: "01-MEL-01-0007", name: "Factory Retaining Walls", client: "RWS", hours: 126 },
-  { code: "01-SYD-01-0032", name: "Sunset Sleepers Custom", client: "SSP", hours: 76 },
-  { code: "01-MEL-01-0019", name: "Keystone POS Connection R&D", client: "KST", hours: 48 },
-];
-
-const sampleEmployees = [
-  { id: "E1001", name: "Rizwan", rate: 55, country: "AU", manager: "Nick" },
-  { id: "E1002", name: "Hira", rate: 45, country: "PK", manager: "Nick" },
-  { id: "E1003", name: "Miguel", rate: 65, country: "AU", manager: "Nick" },
-];
-
-function useClock() {
-  const [now, setNow] = useState(new Date());
-  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t); }, []);
-  return now;
-}
-
-// --- Employee: Clock-In Hub ---
-function ClockInHub({ state, setState }) {
-  const now = useClock();
-  const isLate = now.getHours() > 8 || (now.getHours() === 8 && now.getMinutes() > 5);
+// --- Employee: Clock-In Hub (timezone & flexible shift aware) ---
+function ClockInHub({ user, state, setState }){
+  const nowStr = nowClockString(user.timeZone);
+  const nowMins = nowMinsInTZ(user.timeZone);
+  const threshold = hhmmToMins(user.shiftStart) + (user.graceMin ?? 0);
+  const isLateNow = nowMins > threshold;
   const checkedIn = !!state.timeIn && !state.timeOut;
 
   const toggleCheck = () => {
-    if (!checkedIn) setState(s => ({...s, timeIn: new Date(), late: isLate}));
-    else setState(s => ({...s, timeOut: new Date()}));
+    if (!checkedIn) setState(s => ({...s, timeIn: new Date().toISOString(), late: isLateNow}));
+    else setState(s => ({...s, timeOut: new Date().toISOString()}));
   };
 
   return (
-    <Section title="Clock-In Hub" actions={
+    <Section title="Clock‑In Hub" actions={
       <button onClick={toggleCheck}
         style={{background: checkedIn ? BRAND.orange : BRAND.jungle, color: BRAND.white}}
         className="btn px-5 py-2.5 shadow hover:opacity-95 font-body">
-        {checkedIn ? "Check-Out" : "Check-In"}
+        {checkedIn ? "Check‑Out" : "Check‑In"}
       </button>
     }>
       <div className="grid md:grid-cols-4 gap-4">
-        <StatCard label="Current Time" value={now.toLocaleTimeString()} hint={now.toDateString()} />
-        <StatCard label="Status" value={checkedIn ? (state.late? "Late (In)" : "On Time") : "Not Checked-In"} hint={state.timeIn ? new Date(state.timeIn).toLocaleTimeString() : "—"} />
+        <StatCard label={`Current Time (${user.country})`} value={nowStr} hint={user.timeZone} />
+        <StatCard label="Status" value={checkedIn ? (state.late? "Late (In)" : "On Time") : "Not Checked‑In"} hint={state.timeIn ? new Date(state.timeIn).toLocaleTimeString() : "—"} />
         <StatCard label="Breaks Today" value={`${state.breakMin} min`} />
         <StatCard label="Utilisation" value={`${state.util}%`} progress={state.util} />
       </div>
       <div className="mt-5 pill p-4" style={{background: BRAND.beige, color: BRAND.jungle}}>
         <div className="font-display-medium">Tip</div>
-        <div className="text-sm opacity-90">You are marked <b>{isLate? "Late" : "On-time"}</b> if check-in after <b>08:05</b> local.</div>
+        <div className="text-sm opacity-90">
+          You are marked <b>Late</b> if you check‑in after <b>{user.shiftStart}{user.graceMin? `+${user.graceMin}m` : ''}</b> local to your timezone ({user.timeZone}).<br/>
+          You are <b>On‑time</b> if you check‑in <b>before</b> that threshold.
+        </div>
       </div>
     </Section>
   );
 }
 
 // --- Employee: Work Timer ---
-function WorkTimer({ state, setState, projects }) {
+function WorkTimer({ user, state, setState, projects }){
   const [active, setActive] = useState(null);
   const [task, setTask] = useState("Design");
   const [elapsed, setElapsed] = useState(0);
 
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setElapsed(e => e + 1), 1000);
-    return () => clearInterval(t);
-  }, [active]);
+  useEffect(() => { if (!active) return; const t = setInterval(() => setElapsed(e => e + 1), 1000); return () => clearInterval(t); }, [active]);
 
-  const start = () => { if (!active) setActive({ started: new Date(), project: projects[0].code, task }); };
+  const start = () => { if (!active) setActive({ started: new Date().toISOString(), project: projects[0].code, task }); };
   const stop  = () => { if (active) { setActive(null); setElapsed(0); } };
   const takeBreak = () => setState(s => ({...s, breakMin: s.breakMin + 15}));
 
@@ -199,7 +218,7 @@ function WorkTimer({ state, setState, projects }) {
         <div className="bevel-card p-5">
           <div className="text-sm opacity-70 mb-1 font-body">Project</div>
           <select className="w-full border pill p-3 font-body" value={active?.project ?? projects[0].code}
-            onChange={e => setActive(a => a? {...a, project: e.target.value} : { started: new Date(), project: e.target.value, task })}>
+            onChange={e => setActive(a => a? {...a, project: e.target.value} : { started: new Date().toISOString(), project: e.target.value, task })}>
             {projects.map(p => <option key={p.code} value={p.code}>{p.code} — {p.name}</option>)}
           </select>
           <div className="text-sm opacity-70 mt-3 mb-1 font-body">Task Type</div>
@@ -231,27 +250,16 @@ function WorkTimer({ state, setState, projects }) {
   );
 }
 
-function fmt(sec){
-  const h = Math.floor(sec/3600).toString().padStart(2,'0');
-  const m = Math.floor((sec%3600)/60).toString().padStart(2,'0');
-  const s = Math.floor(sec%60).toString().padStart(2,'0');
-  return `${h}:${m}:${s}`;
-}
-
-function MiniBarChart({ data }){
-  const max = Math.max(...data.map(d=>d.value));
-  return (
-    <div className="space-y-2 font-body">
-      {data.map(d => (
-        <div key={d.label}>
-          <div className="text-xs opacity-70 mb-1 flex justify-between"><span>{d.label}</span><span>{d.value.toFixed(1)}h</span></div>
-          <div className="h-2 w-full pill" style={{background: "#E5E7EB"}}/>
-          <div className="-mt-2 h-2 pill" style={{width: `${(d.value/max)*100}%`, background: BRAND.jungle}}/>
-        </div>
-      ))}
+function fmt(sec){ const h = Math.floor(sec/3600).toString().padStart(2,'0'); const m = Math.floor((sec%3600)/60).toString().padStart(2,'0'); const s = Math.floor(sec%60).toString().padStart(2,'0'); return `${h}:${m}:${s}`; }
+function MiniBarChart({ data }){ const max = Math.max(...data.map(d=>d.value)); return (
+  <div className="space-y-2 font-body">{data.map(d => (
+    <div key={d.label}>
+      <div className="text-xs opacity-70 mb-1 flex justify-between"><span>{d.label}</span><span>{d.value.toFixed(1)}h</span></div>
+      <div className="h-2 w-full pill" style={{background: "#E5E7EB"}}/>
+      <div className="-mt-2 h-2 pill" style={{width: `${(d.value/max)*100}%`, background: BRAND.jungle}}/>
     </div>
-  );
-}
+  ))}</div>
+); }
 
 // --- Leave Hub ---
 function LeaveHub(){
@@ -288,7 +296,7 @@ function LeaveHub(){
               <input type="date" className="w-full border pill p-3 font-body" value={form.end} onChange={e=>setForm({...form, end:e.target.value})} />
             </div>
           </div>
-          <label className="flex items-center gap-2 mt-3 text-sm font-body"><input type="checkbox" checked={form.cashout} onChange={e=>setForm({...form, cashout:e.target.checked})} /> Cash-out if over balance</label>
+          <label className="flex items-center gap-2 mt-3 text-sm font-body"><input type="checkbox" checked={form.cashout} onChange={e=>setForm({...form, cashout:e.target.checked})} /> Cash‑out if over balance</label>
           <button onClick={submit} style={{background: BRAND.jungle, color: BRAND.white}} className="btn mt-4 w-full py-3 shadow font-body">Submit</button>
           <div className="mt-3 text-xs opacity-70 font-body">Public holidays are excluded automatically.</div>
         </div>
@@ -324,11 +332,7 @@ function LeaveHub(){
   );
 }
 
-function calcDays(start, end){
-  const s = new Date(start), e = new Date(end);
-  const ms = e - s; if (ms < 0) return 0;
-  return Math.round(ms / (1000*60*60*24)) + 1;
-}
+function calcDays(start, end){ const s = new Date(start), e = new Date(end); const ms = e - s; if (ms < 0) return 0; return Math.round(ms / (1000*60*60*24)) + 1; }
 
 // --- Manager / Team Dashboard ---
 function TeamDashboard(){
@@ -343,15 +347,15 @@ function TeamDashboard(){
       <div className="grid md:grid-cols-3 gap-4 mt-4">
         <div className="bevel-card p-5">
           <div className="font-display-medium mb-2">Project Effort Split</div>
-          <MiniBarChart data={sampleProjects.map(p=>({ label: p.client, value: Math.max(1, Math.round(p.hours/10)/10) }))} />
+          <MiniBarChart data={PROJECTS.map(p=>({ label: p.client, value: Math.max(1, Math.round(p.hours/10)/10) }))} />
         </div>
         <div className="bevel-card p-5">
           <div className="font-display-medium mb-2">Top Contributors</div>
           <ul className="space-y-2 text-sm font-body">
-            {sampleEmployees.map(e => (
+            {EMPLOYEES.slice(1).map(e => (
               <li key={e.id} className="flex items-center justify-between border-b pb-2">
                 <span className="font-display-medium">{e.name}</span>
-                <span className="opacity-70">Util: {80 + Math.floor(Math.random()*15)}%</span>
+                <span className="opacity-70">{e.role}</span>
               </li>
             ))}
           </ul>
@@ -359,13 +363,16 @@ function TeamDashboard(){
         <div className="bevel-card p-5">
           <div className="font-display-medium mb-2">Attendance Today</div>
           <ul className="space-y-2 text-sm font-body">
-            {sampleEmployees.map(e => (
-              <li key={e.id} className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 pill" style={{background: Math.random()>.15? BRAND.jungle : BRAND.orange}}></span>
-                <span className="font-display-medium">{e.name}</span>
-                <span className="opacity-60 ml-auto">{Math.random()>.15? "On-site" : "Late"}</span>
-              </li>
-            ))}
+            {EMPLOYEES.map(e => {
+              const late = nowMinsInTZ(e.timeZone) > (hhmmToMins(e.shiftStart) + (e.graceMin??0));
+              return (
+                <li key={e.id} className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 pill" style={{background: late? BRAND.orange : BRAND.jungle}}></span>
+                  <span className="font-display-medium">{e.name}</span>
+                  <span className="opacity-60 ml-auto">{late? "Late" : "On‑time"} ({e.country})</span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>
@@ -373,9 +380,9 @@ function TeamDashboard(){
   );
 }
 
-// --- Admin Panels ---
+// --- Admin: Projects (unchanged) ---
 function ProjectsAdmin(){
-  const [list, setList] = useState(sampleProjects);
+  const [list, setList] = useState(PROJECTS);
   const [form, setForm] = useState({ code: "", name: "", client: "" });
   const add = () => { if(!form.code) return; setList(ls=>[{...form, hours:0}, ...ls]); setForm({code:"",name:"",client:""}); };
   return (
@@ -412,27 +419,70 @@ function ProjectsAdmin(){
   );
 }
 
-function EmployeesAdmin(){
+// --- Admin: Employees (edit TZ & shifts) ---
+function EmployeesAdmin({ employees, setEmployees }){
+  const [sel, setSel] = useState(employees[0].id);
+  const e = employees.find(x => x.id===sel);
+  const update = (patch) => setEmployees(list => list.map(x => x.id===e.id? {...x, ...patch} : x));
+
   return (
-    <Section title="Employees">
-      <table className="w-full text-sm bevel-card font-body">
-        <thead>
-          <tr className="text-left opacity-70">
-            <th className="py-2 pl-5">ID</th><th>Name</th><th>Rate</th><th>Country</th><th>Manager</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sampleEmployees.map(e => (
-            <tr key={e.id} className="border-t">
-              <td className="py-2 pl-5">{e.id}</td><td>{e.name}</td><td>${e.rate}/h</td><td>{e.country}</td><td>{e.manager}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <Section title="Employees (Timezone & Shifts)">
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="bevel-card p-5">
+          <div className="font-display-medium mb-3">Select Employee</div>
+          <select className="w-full border pill p-3 font-body" value={sel} onChange={e=>setSel(e.target.value)}>
+            {employees.map(p => <option key={p.id} value={p.id}>{p.name} • {p.role}</option>)}
+          </select>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <div>
+              <div className="text-sm opacity-70">Shift Start</div>
+              <input className="w-full border pill p-3" value={e.shiftStart} onChange={ev=>update({shiftStart: ev.target.value})} placeholder="08:00"/>
+            </div>
+            <div>
+              <div className="text-sm opacity-70">Shift End</div>
+              <input className="w-full border pill p-3" value={e.shiftEnd} onChange={ev=>update({shiftEnd: ev.target.value})} placeholder="16:00"/>
+            </div>
+            <div>
+              <div className="text-sm opacity-70">Grace (min)</div>
+              <input type="number" className="w-full border pill p-3" value={e.graceMin} onChange={ev=>update({graceMin: Number(ev.target.value)||0})} />
+            </div>
+            <div>
+              <div className="text-sm opacity-70">Timezone</div>
+              <select className="w-full border pill p-3" value={e.timeZone} onChange={ev=>update({timeZone: ev.target.value})}>
+                <option value={TZ.AU}>Australia/Melbourne</option>
+                <option value={TZ.PK}>Asia/Karachi</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div className="md:col-span-2 bevel-card p-5 overflow-auto">
+          <div className="font-display-medium mb-3">Roster</div>
+          <table className="w-full text-sm font-body">
+            <thead>
+              <tr className="text-left opacity-70">
+                <th className="py-2">Name</th><th>Role</th><th>Country</th><th>Timezone</th><th>Shift</th><th>Grace</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employees.map(p => (
+                <tr key={p.id} className="border-t">
+                  <td className="py-2">{p.name}</td>
+                  <td>{p.role}</td>
+                  <td>{p.country}</td>
+                  <td className="text-xs">{p.timeZone}</td>
+                  <td>{p.shiftStart}–{p.shiftEnd}</td>
+                  <td>{p.graceMin}m</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </Section>
   );
 }
 
+// --- Approvals ---
 function Approvals(){
   const [items, setItems] = useState([
     { id: "TS-1007", employee: "Rizwan", period: "05–11 Aug", hours: 39.5, status: "Pending" },
@@ -465,43 +515,46 @@ function Approvals(){
   );
 }
 
+// --- Root App with RBAC & Mobile Nav ---
 export default function App(){
-  const [role, setRole] = useState("Employee");
+  const [employees, setEmployees] = useState(EMPLOYEES);
+  const [userId, setUserId] = useState(EMPLOYEES[0].id);
+  const user = employees.find(u => u.id===userId);
+
   const [tab, setTab] = useState("emp.dashboard");
   const [empState, setEmpState] = useState({ timeIn: null, timeOut: null, breakMin: 0, late: false, util: 82 });
 
   const tabs = useMemo(() => {
-    if(role === 'Employee') return [
+    if(user.role === 'Manager') return [
       { key: 'emp.dashboard', label: 'My Dashboard', section: 'Employee' },
-      { key: 'emp.clock',     label: 'Clock-In Hub', section: 'Employee' },
+      { key: 'emp.clock',     label: 'Clock‑In Hub', section: 'Employee' },
+      { key: 'emp.timer',     label: 'Work Timer',   section: 'Employee' },
+      { key: 'emp.leave',     label: 'Leave',        section: 'Employee' },
+      { key: 'mgr.team',      label: 'Team Dashboard', section: 'Manager' },
+      { key: 'mgr.approvals', label: 'Approvals', section: 'Manager' },
+      { key: 'adm.emps',      label: 'Employees', section: 'Admin' },
+      { key: 'adm.projects',  label: 'Projects',  section: 'Admin' },
+    ];
+    return [
+      { key: 'emp.dashboard', label: 'My Dashboard', section: 'Employee' },
+      { key: 'emp.clock',     label: 'Clock‑In Hub', section: 'Employee' },
       { key: 'emp.timer',     label: 'Work Timer',   section: 'Employee' },
       { key: 'emp.leave',     label: 'Leave',        section: 'Employee' },
     ];
-    if(role === 'Manager') return [
-      { key: 'mgr.team',      label: 'Team Dashboard', section: 'Manager' },
-      { key: 'mgr.approvals', label: 'Timesheet Approvals', section: 'Manager' },
-      { key: 'emp.leave',     label: 'My Leave', section: 'Employee' },
-    ];
-    return [
-      { key: 'adm.projects',  label: 'Projects', section: 'Admin' },
-      { key: 'adm.emps',      label: 'Employees', section: 'Admin' },
-      { key: 'mgr.team',      label: 'Team Dashboard', section: 'Manager' },
-      { key: 'mgr.approvals', label: 'Approvals', section: 'Manager' },
-    ];
-  }, [role]);
+  }, [user.role]);
 
-  useEffect(()=>{ setTab(tabs[0].key); }, [role]);
+  useEffect(()=>{ setTab(tabs[0].key); }, [user.role]);
 
   return (
     <div className="font-body" style={{background: BRAND.beige, minHeight: '100vh', color: BRAND.jungle}}>
       <BrandTypography />
-      <Header role={role} onRoleChange={setRole} />
+      <Header user={user} onUserChange={setUserId} />
       <TabBar tabs={tabs} active={tab} onSelect={setTab} />
 
       {tab === 'emp.dashboard' && (
         <Section title="My Dashboard">
           <div className="grid md:grid-cols-4 gap-4">
-            <StatCard label="This Week" value="37.8 h" hint="Mon-Thu" progress={89} />
+            <StatCard label="This Week" value="37.8 h" hint="Mon‑Thu" progress={89} />
             <StatCard label="Utilisation" value="82%" progress={82} />
             <StatCard label="Breaks (avg)" value="38 m" />
             <StatCard label="Late (week)" value="1" accent="orange" />
@@ -510,7 +563,7 @@ export default function App(){
             <div className="bevel-card p-5">
               <div className="font-display-medium mb-2">My Projects</div>
               <ul className="text-sm divide-y font-body">
-                {sampleProjects.map(p => (
+                {PROJECTS.map(p => (
                   <li key={p.code} className="py-2 flex items-center justify-between">
                     <div>
                       <div className="font-display-medium">{p.name}</div>
@@ -518,7 +571,7 @@ export default function App(){
                     </div>
                     <div className="text-right">
                       <div className="font-display-medium">{p.hours} h</div>
-                      <div className="opacity-70 text-xs">month-to-date</div>
+                      <div className="opacity-70 text-xs">month‑to‑date</div>
                     </div>
                   </li>
                 ))}
@@ -529,24 +582,254 @@ export default function App(){
               <ul className="text-sm space-y-2 font-body">
                 <li>Timesheet due <b>Friday 4pm</b>.</li>
                 <li>Leave approved <b>25–29 Aug</b>.</li>
-                <li>Project <b>01-SYD-01-0032</b> nearing budget.</li>
+                <li>Project <b>01‑SYD‑01‑0032</b> nearing budget.</li>
               </ul>
             </div>
           </div>
         </Section>
       )}
 
-      {tab === 'emp.clock'   && <ClockInHub state={empState} setState={setEmpState} />}
-      {tab === 'emp.timer'   && <WorkTimer state={empState} setState={setEmpState} projects={sampleProjects} />}
+      {tab === 'emp.clock'   && <ClockInHub user={user} state={empState} setState={setEmpState} />}
+      {tab === 'emp.timer'   && <WorkTimer user={user} state={empState} setState={setEmpState} projects={PROJECTS} />}
       {tab === 'emp.leave'   && <LeaveHub />}
-      {tab === 'mgr.team'    && <TeamDashboard />}
-      {tab === 'mgr.approvals' && <Approvals />}
-      {tab === 'adm.projects' && <ProjectsAdmin />}
-      {tab === 'adm.emps'    && <EmployeesAdmin />}
+      {tab === 'mgr.team'    && user.role==='Manager' && <TeamDashboard />}
+      {tab === 'mgr.approvals' && user.role==='Manager' && <Approvals />}
+      {tab === 'adm.projects' && user.role==='Manager' && <ProjectsAdmin />}
+      {tab === 'adm.emps'    && user.role==='Manager' && <EmployeesAdmin employees={employees} setEmployees={setEmployees} />}
+
+      <MobileNav tabs={tabs} active={tab} onSelect={setTab} />
 
       <footer className="max-w-7xl mx-auto px-5 py-10 text-sm opacity-80 font-body">
-        UI uses brand colors & typography per Brandbook 2025. In production, connect to SharePoint, Power Automate, and Power BI.
+        Timezone & shift-aware. Roles: Manager / Engineer / Drafter. Mobile nav enabled.
       </footer>
     </div>
   );
+}import React, { useMemo, useState, useEffect } from "react";
+
+// Konceptual Time & Leave — Frontend Prototype (Brand 2025)
+// New features in this revision:
+// 1) Corrected tip text + proper late logic
+// 2) Timezone-aware clocking per employee (AU vs PK etc.)
+// 3) Per-employee shift window (start/end) + grace minutes
+// 4) Roles/permissions: Manager, Engineer, Drafter (tabs adapt)
+// 5) Mobile bottom nav for quick access
+
+// --- Brand Palette (exact matches) ---
+const BRAND = {
+  jungle: "#0D3036",      // Jungle Green (Primary)
+  jungle600: "#09242A",   // Darkened Jungle for gradients
+  orange: "#FF5C01",      // Vivid Orange (Accent)
+  beige: "#F0F6E0",       // Beige White (Background highlight)
+  black: "#000000",
+  white: "#FFFFFF",
+};
+
+const shadow = {
+  card: "0 10px 25px rgba(0,0,0,.06)",
+};
+
+// Inject minimal global styles for typography
+function BrandTypography() {
+  return (
+    <style>{`
+      :root{ --brand-jungle:${BRAND.jungle}; --brand-orange:${BRAND.orange}; --brand-beige:${BRAND.beige}; }
+      .font-display{ font-family: Sherika, "Helvetica Neue", Arial, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight: 700; letter-spacing: -0.01em; }
+      .font-display-medium{ font-family: Sherika, "Helvetica Neue", Arial, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight: 600; letter-spacing: -0.01em; }
+      .font-body{ font-family: "Helvetica Neue", Arial, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      .bevel-card{ border-radius: 1rem; box-shadow: ${shadow.card}; background: ${BRAND.white}; }
+      .pill{ border-radius: 0.75rem; }
+      .btn{ border-radius: 0.75rem; font-weight: 700; }
+      .safe-touch{ min-height: 44px; min-width: 44px; }
+      @media (max-width: 768px){
+        body{ padding-bottom: 72px; } /* space for bottom nav */
+      }
+    `}</style>
+  );
 }
+
+// --- Helpers: time & shifts ---
+const TZ = {
+  AU: "Australia/Melbourne",
+  PK: "Asia/Karachi",
+};
+
+function hhmmToMins(hhmm){ const [h,m] = hhmm.split(":").map(Number); return h*60 + m; }
+function minsToHHMM(mins){ const h = Math.floor(mins/60).toString().padStart(2,'0'); const m = (mins%60).toString().padStart(2,'0'); return `${h}:${m}`; }
+function nowMinsInTZ(timeZone){
+  const s = new Intl.DateTimeFormat('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone}).format(new Date());
+  const [hh,mm] = s.split(':').map(Number); return hh*60+mm;
+}
+function nowClockString(tz){
+  return new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone: tz}).format(new Date());
+}
+
+// --- Sample employees with roles, timezones & shifts ---
+const EMPLOYEES = [
+  { id:"U001", name:"Nick",     role:"Manager",  country:"AU", timeZone: TZ.AU, shiftStart:"08:00", shiftEnd:"16:00", graceMin:5, rate: 90 },
+  { id:"U002", name:"Rizwan",   role:"Engineer", country:"PK", timeZone: TZ.PK, shiftStart:"08:00", shiftEnd:"16:00", graceMin:5, rate: 55 },
+  { id:"U003", name:"Hira",     role:"Drafter",  country:"PK", timeZone: TZ.PK, shiftStart:"10:00", shiftEnd:"18:00", graceMin:5, rate: 45 },
+  { id:"U004", name:"Miguel",   role:"Engineer", country:"AU", timeZone: TZ.AU, shiftStart:"09:30", shiftEnd:"17:30", graceMin:10, rate: 65 },
+];
+
+// Projects sample
+const PROJECTS = [
+  { code: "01-MEL-01-0007", name: "Factory Retaining Walls", client: "RWS", hours: 126 },
+  { code: "01-SYD-01-0032", name: "Sunset Sleepers Custom", client: "SSP", hours: 76 },
+  { code: "01-MEL-01-0019", name: "Keystone POS Connection R&D", client: "KST", hours: 48 },
+];
+
+function Header({ user, onUserChange }){
+  return (
+    <header style={{
+      background: `linear-gradient(120deg, ${BRAND.jungle}, ${BRAND.jungle600})`,
+      color: BRAND.white,
+      boxShadow: shadow.card,
+    }} className="sticky top-0 z-30 font-body">
+      <div className="max-w-7xl mx-auto px-5 py-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div style={{background: BRAND.orange}} className="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xl">K</div>
+          <div>
+            <div className="font-display text-xl">Konceptual</div>
+            <div className="opacity-85 text-sm">Engineering Excellence From Ground Up</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-right hidden md:block">
+            <div className="text-xs opacity-80">Role</div>
+            <div className="font-display-medium">{user.role}</div>
+          </div>
+          <select className="pill p-2 text-sm text-black" value={user.id} onChange={e=>onUserChange(e.target.value)}>
+            {EMPLOYEES.map(u => (
+              <option key={u.id} value={u.id}>{u.name} • {u.role}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function TabBar({ tabs, active, onSelect }){
+  return (
+    <nav className="max-w-7xl mx-auto px-5 pt-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 font-body">
+      {tabs.map(t => (
+        <button key={t.key} onClick={()=>onSelect(t.key)}
+          style={{ borderColor: active===t.key? BRAND.orange : "transparent", background: active===t.key? BRAND.beige : BRAND.white }}
+          className="pill border-2 p-3 text-left shadow-sm hover:shadow-md transition-all">
+          <div className="text-xs opacity-70">{t.section}</div>
+          <div className="font-display-medium">{t.label}</div>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function MobileNav({ tabs, active, onSelect }){
+  // Mobile bottom nav for quick access
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t font-body" style={{borderColor:'#E5E7EB'}}>
+      <div className="grid grid-cols-4 text-sm">
+        {tabs.slice(0,4).map(t => (
+          <button key={t.key} onClick={()=>onSelect(t.key)} className="py-3 safe-touch" style={{color: active===t.key? BRAND.orange : BRAND.jungle}}>
+            <div className="font-display-medium leading-none">{t.label.split(' ')[0]}</div>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function StatCard({ label, value, hint, progress, accent="jungle" }){
+  const bar = accent==="orange" ? BRAND.orange : BRAND.jungle;
+  return (
+    <div className="bevel-card p-5 font-body">
+      <div className="text-sm opacity-70">{label}</div>
+      <div className="text-2xl md:text-3xl font-display">{value}</div>
+      {hint && <div className="text-xs opacity-70 mt-1">{hint}</div>}
+      {typeof progress === 'number' && (
+        <div className="mt-3">
+          <div className="h-2 w-full pill" style={{background: "#E5E7EB"}} />
+          <div className="-mt-2 h-2 pill" style={{width: `${Math.min(100, Math.max(0, progress))}%`, background: bar}} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Section({ title, children, actions }){
+  return (
+    <section className="max-w-7xl mx-auto px-5 py-6 font-body">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg md:text-xl font-display" style={{color: BRAND.jungle}}>{title}</h2>
+        {actions}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// --- Employee: Clock-In Hub (timezone & flexible shift aware) ---
+function ClockInHub({ user, state, setState }){
+  const nowStr = nowClockString(user.timeZone);
+  const nowMins = nowMinsInTZ(user.timeZone);
+  const threshold = hhmmToMins(user.shiftStart) + (user.graceMin ?? 0);
+  const isLateNow = nowMins > threshold;
+  const checkedIn = !!state.timeIn && !state.timeOut;
+
+  const toggleCheck = () => {
+    if (!checkedIn) setState(s => ({...s, timeIn: new Date().toISOString(), late: isLateNow}));
+    else setState(s => ({...s, timeOut: new Date().toISOString()}));
+  };
+
+  return (
+    <Section title="Clock‑In Hub" actions={
+      <button onClick={toggleCheck}
+        style={{background: checkedIn ? BRAND.orange : BRAND.jungle, color: BRAND.white}}
+        className="btn px-5 py-2.5 shadow hover:opacity-95 font-body">
+        {checkedIn ? "Check‑Out" : "Check‑In"}
+      </button>
+    }>
+      <div className="grid md:grid-cols-4 gap-4">
+        <StatCard label={`Current Time (${user.country})`} value={nowStr} hint={user.timeZone} />
+        <StatCard label="Status" value={checkedIn ? (state.late? "Late (In)" : "On Time") : "Not Checked‑In"} hint={state.timeIn ? new Date(state.timeIn).toLocaleTimeString() : "—"} />
+        <StatCard label="Breaks Today" value={`${state.breakMin} min`} />
+        <StatCard label="Utilisation" value={`${state.util}%`} progress={state.util} />
+      </div>
+      <div className="mt-5 pill p-4" style={{background: BRAND.beige, color: BRAND.jungle}}>
+        <div className="font-display-medium">Tip</div>
+        <div className="text-sm opacity-90">
+          You are marked <b>Late</b> if you check‑in after <b>{user.shiftStart}{user.graceMin? `+${user.graceMin}m` : ''}</b> local to your timezone ({user.timeZone}).<br/>
+          You are <b>On‑time</b> if you check‑in <b>before</b> that threshold.
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+// --- Employee: Work Timer ---
+function WorkTimer({ user, state, setState, projects }){
+  const [active, setActive] = useState(null);
+  const [task, setTask] = useState("Design");
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => { if (!active) return; const t = setInterval(() => setElapsed(e => e + 1), 1000); return () => clearInterval(t); }, [active]);
+
+  const start = () => { if (!active) setActive({ started: new Date().toISOString(), project: projects[0].code, task }); };
+  const stop  = () => { if (active) { setActive(null); setElapsed(0); } };
+  const takeBreak = () => setState(s => ({...s, breakMin: s.breakMin + 15}));
+
+  return (
+    <Section title="Work Timer">
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="bevel-card p-5">
+          <div className="text-sm opacity-70 mb-1 font-body">Project</div>
+          <select className="w-full border pill p-3 font-body" value={active?.project ?? projects[0].code}
+            onChange={e => setActive(a => a? {...a, project: e.target.value} : { started: new Date().toISOString(), project: e.target.value, task })}>
+            {projects.map(p => <option key={p.code} value={p.code}>{p.code} — {p.name}</option>)}
+          </select>
+          <div className="text-sm opacity-70 mt-3 mb-1 font-body">Task Type</div>
+          <select className="w-full border pill p-3 font-body" value={task} onChange={e => setTask(e.target.value)}>
+            {["Design","CAD","RFI","Review","Admin"].map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <div className="flex gap-2 mt-4">
+            <button onClick={start} style={{background: BRAND.jungle, color: BRAND.white}} className="btn px-4 py-2 shadow font-body">Start</button>
