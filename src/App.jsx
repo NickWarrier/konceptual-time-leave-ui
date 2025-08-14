@@ -1,12 +1,12 @@
 import React, { useMemo, useState, useEffect } from "react";
 
 // Konceptual Time & Leave — Frontend Prototype (Brand 2025)
-// New features in this revision:
-// 1) Corrected tip text + proper late logic
-// 2) Timezone-aware clocking per employee (AU vs PK etc.)
-// 3) Per-employee shift window (start/end) + grace minutes
-// 4) Roles/permissions: Manager, Engineer, Drafter (tabs adapt)
-// 5) Mobile bottom nav for quick access
+// Features:
+// - Correct late/on-time copy & logic
+// - Timezone-aware per employee (AU/PK)
+// - Per-employee shift window + grace minutes
+// - Roles/permissions: Manager, Engineer, Drafter
+// - Mobile bottom nav
 
 // --- Brand Palette (exact matches) ---
 const BRAND = {
@@ -34,9 +34,7 @@ function BrandTypography() {
       .pill{ border-radius: 0.75rem; }
       .btn{ border-radius: 0.75rem; font-weight: 700; }
       .safe-touch{ min-height: 44px; min-width: 44px; }
-      @media (max-width: 768px){
-        body{ padding-bottom: 72px; } /* space for bottom nav */
-      }
+      @media (max-width: 768px){ body{ padding-bottom: 72px; } }
     `}</style>
   );
 }
@@ -604,15 +602,16 @@ export default function App(){
       </footer>
     </div>
   );
-}import React, { useMemo, useState, useEffect } from "react";
+}
+import React, { useMemo, useState, useEffect } from "react";
 
 // Konceptual Time & Leave — Frontend Prototype (Brand 2025)
-// New features in this revision:
-// 1) Corrected tip text + proper late logic
-// 2) Timezone-aware clocking per employee (AU vs PK etc.)
-// 3) Per-employee shift window (start/end) + grace minutes
-// 4) Roles/permissions: Manager, Engineer, Drafter (tabs adapt)
-// 5) Mobile bottom nav for quick access
+// Features:
+// - Correct late/on-time copy & logic
+// - Timezone-aware per employee (AU/PK)
+// - Per-employee shift window + grace minutes
+// - Roles/permissions: Manager, Engineer, Drafter
+// - Mobile bottom nav
 
 // --- Brand Palette (exact matches) ---
 const BRAND = {
@@ -640,9 +639,7 @@ function BrandTypography() {
       .pill{ border-radius: 0.75rem; }
       .btn{ border-radius: 0.75rem; font-weight: 700; }
       .safe-touch{ min-height: 44px; min-width: 44px; }
-      @media (max-width: 768px){
-        body{ padding-bottom: 72px; } /* space for bottom nav */
-      }
+      @media (max-width: 768px){ body{ padding-bottom: 72px; } }
     `}</style>
   );
 }
@@ -833,3 +830,5 @@ function WorkTimer({ user, state, setState, projects }){
           </select>
           <div className="flex gap-2 mt-4">
             <button onClick={start} style={{background: BRAND.jungle, color: BRAND.white}} className="btn px-4 py-2 shadow font-body">Start</button>
+            <button onClick={stop} style={{background: BRAND.orange, color: BRAND.white}} className="btn px-4 py-2 shadow font-body">Stop</button>
+            <button onClick={takeBreak} className="btn px-4 py-2 font-body" style={{background: BRAND.beige, color
